@@ -1,3 +1,24 @@
+import { ToolDefinition } from '../sdk/types';
+
+// Example tool registry used by AgentService and tests
+export const EXAMPLE_TOOLS: ToolDefinition[] = [
+  {
+    name: 'echo',
+    description: 'Echo input string',
+    parameters: {
+      type: 'object',
+      properties: {
+        text: { type: 'string' },
+      },
+      required: ['text'],
+    },
+    execute: async (args: Record<string, unknown>) => {
+      return `Echo: ${String(args.text || '')}`;
+    },
+  },
+];
+
+export default EXAMPLE_TOOLS;
 import { Type } from "@google/genai";
 import { AgentTool, AgentContext, TerminalLineType } from "../types";
 import { writeFileNode, readFileNode, listDirNode, deleteNode } from "./virtualFileSystem";

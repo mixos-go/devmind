@@ -18,6 +18,7 @@ import {
 } from '../types';
 import { BaseProvider, generateResponseId, generateToolCallId } from './base';
 import { AuthenticationError, InvalidRequestError } from '../errors';
+import { parseSSE } from '../utils/streaming';
 
 // ============================================
 // GEMINI PROVIDER
@@ -129,44 +130,25 @@ export class GeminiProvider extends BaseProvider {
         return;
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        yield { type: 'error', error: 'No response body' };
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
       let totalUsage: TokenUsage = {
         promptTokens: 0,
         completionTokens: 0,
         totalTokens: 0,
       };
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-            if (!data || data === '[DONE]') continue;
-
-            try {
-              const parsed = JSON.parse(data);
-              yield* this.parseStreamChunk(parsed, totalUsage);
-            } catch {
-              // Skip invalid JSON
-            }
-          }
+      for await (const parsed of parseSSE(response)) {
+        try {
+          yield* this.parseStreamChunk(parsed as Record<string, unknown>, totalUsage);
+        } catch (e) {
+          // continue on parse errors for a chunk
         }
       }
 
-      yield { type: 'usage', usage: totalUsage };
+      // Emit usage if any
+      if (totalUsage) {
+        yield { type: 'usage', usage: totalUsage };
+      }
+
       yield { type: 'done' };
     } catch (error) {
       yield { type: 'error', error: error instanceof Error ? error.message : String(error) };

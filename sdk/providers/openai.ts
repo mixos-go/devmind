@@ -151,35 +151,33 @@ export class OpenAIProvider extends BaseProvider {
         return;
       }
 
-      const toolCallBuffers: Map<number, Partial<ToolCall>> = new Map();
+      // Track tool calls and their argument buffers (arguments come as streaming strings)
+      const toolCallBuffers: Map<number, Partial<ToolCall> & { argumentBuffer?: string }> = new Map();
       let usage: TokenUsage | undefined;
+      let finishReason: FinishReason | undefined;
 
       for await (const data of parseSSE(response)) {
         const choice = (data.choices as unknown[])?.[0] as Record<string, unknown> | undefined;
         const delta = choice?.delta as Record<string, unknown> | undefined;
+        const finishReasonStr = choice?.finish_reason as string | undefined;
 
         if (delta?.content) {
           yield { type: 'text', content: delta.content as string };
         }
 
-        // Handle tool calls
+        // Handle tool calls - arguments come as JSON string chunks
         if (delta?.tool_calls) {
           for (const tc of delta.tool_calls as Record<string, unknown>[]) {
             const index = tc.index as number;
-            const existing = toolCallBuffers.get(index) || {};
+            let existing = toolCallBuffers.get(index) || { argumentBuffer: '' };
             
             if (tc.id) existing.id = tc.id as string;
             if (tc.function) {
               const fn = tc.function as Record<string, unknown>;
               if (fn.name) existing.name = fn.name as string;
               if (fn.arguments) {
-                const args = existing.arguments as Record<string, unknown> || {};
-                try {
-                  const parsed = JSON.parse(fn.arguments as string);
-                  existing.arguments = { ...args, ...parsed };
-                } catch {
-                  // Arguments might be streamed in chunks
-                }
+                // Accumulate argument strings (they're streamed as JSON fragments)
+                existing.argumentBuffer = (existing.argumentBuffer || '') + (fn.arguments as string);
               }
             }
             
@@ -196,17 +194,30 @@ export class OpenAIProvider extends BaseProvider {
             totalTokens: u.total_tokens || 0,
           };
         }
+
+        // Track finish reason
+        if (finishReasonStr) {
+          finishReason = this.parseFinishReason(finishReasonStr);
+        }
       }
 
-      // Emit completed tool calls
+      // Emit completed tool calls with parsed arguments
       for (const [, tc] of toolCallBuffers) {
         if (tc.id && tc.name) {
+          let arguments_ = {};
+          if (tc.argumentBuffer) {
+            try {
+              arguments_ = JSON.parse(tc.argumentBuffer);
+            } catch {
+              // Keep empty object if JSON parse fails
+            }
+          }
           yield {
             type: 'tool_call',
             toolCall: {
               id: tc.id,
               name: tc.name,
-              arguments: tc.arguments || {},
+              arguments: arguments_,
             },
           };
         }
