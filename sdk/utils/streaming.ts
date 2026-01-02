@@ -221,37 +221,95 @@ export async function* parseSSE(
 
   const decoder = new TextDecoder();
   let buffer = '';
+  // Accumulate lines for a single SSE event (events are separated by a blank line)
+  let eventLines: string[] = [];
+
+  const flushEvent = async function*(lines: string[]): AsyncGenerator<Record<string, unknown>> {
+    if (lines.length === 0) return;
+
+    // Collect all `data:` lines and join with "\n" per SSE spec
+    const dataLines: string[] = [];
+    for (const l of lines) {
+      if (l.startsWith('data:')) {
+        dataLines.push(l.slice(5).trimStart());
+      }
+    }
+
+    if (dataLines.length === 0) return;
+
+    const data = dataLines.join('\n');
+    if (!data) return;
+
+    if (data === '[DONE]') {
+      return;
+    }
+
+    try {
+      yield JSON.parse(data);
+    } catch {
+      // Skip invalid JSON but don't crash the stream
+    }
+  };
 
   try {
     while (true) {
       const { done, value } = await reader.read();
-      
+
       if (done) {
+        // process any remaining buffered text as final event(s)
+        if (buffer.length > 0) {
+          const remainingLines = buffer.split('\n');
+          for (const rl of remainingLines) {
+            const line = rl.replace(/\r$/, '');
+            if (line === '') {
+              for await (const ev of flushEvent(eventLines)) {
+                yield ev;
+              }
+              eventLines = [];
+            } else if (line.length > 0) {
+              eventLines.push(line);
+            }
+          }
+        }
+
+        // Emit any remaining buffered event
+        if (eventLines.length > 0) {
+          for await (const ev of flushEvent(eventLines)) {
+            yield ev;
+          }
+          eventLines = [];
+        }
+
         break;
       }
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
+      // keep the last partial line in buffer
       buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim();
-          
-          if (data === '[DONE]') {
-            return;
-          }
+      for (const rawLine of lines) {
+        const line = rawLine.replace(/\r$/, '');
 
-          try {
-            yield JSON.parse(data);
-          } catch {
-            // Skip invalid JSON
+        // Blank line indicates end of an event
+        if (line === '') {
+          for await (const ev of flushEvent(eventLines)) {
+            yield ev;
           }
+          eventLines = [];
+          continue;
+        }
+
+        // Skip comment lines (starting with ':') and accumulate data lines
+        if (!line.startsWith(':')) {
+          eventLines.push(line);
         }
       }
     }
   } finally {
-    reader.releaseLock();
+    try {
+      reader.releaseLock();
+    } catch {}
   }
 }
 

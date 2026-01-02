@@ -15,6 +15,7 @@ import {
   QueryFilter,
 } from './types';
 import { DocumentLoader } from './DocumentLoader';
+import { SemanticSearchEngine, SearchResult } from './search';
 import fs from 'fs';
 
 // ============================================
@@ -27,6 +28,7 @@ export class KnowledgeBase {
   private index: SearchIndex;
   private loader: DocumentLoader;
   private config: KnowledgeBaseConfig;
+  private semanticSearchEngine: SemanticSearchEngine;
 
   constructor(config: KnowledgeBaseConfig = {}) {
     this.config = {
@@ -40,6 +42,8 @@ export class KnowledgeBase {
       chunkSize: this.config.maxChunkSize,
       chunkOverlap: this.config.chunkOverlap,
     });
+
+    this.semanticSearchEngine = new SemanticSearchEngine();
 
     this.index = {
       documents: new Map(),
@@ -56,6 +60,7 @@ export class KnowledgeBase {
     const doc = this.loader.loadFromString(content, path, type);
     this.documents.set(doc.id, doc);
     this.indexDocument(doc);
+    this.semanticSearchEngine.addDocuments([doc]);
     return doc;
   }
 
@@ -63,6 +68,7 @@ export class KnowledgeBase {
     const doc = this.loader.loadMarkdown(content, path);
     this.documents.set(doc.id, doc);
     this.indexDocument(doc);
+    this.semanticSearchEngine.addDocuments([doc]);
     return doc;
   }
 
@@ -70,6 +76,7 @@ export class KnowledgeBase {
     const doc = this.loader.loadCode(content, path, language);
     this.documents.set(doc.id, doc);
     this.indexDocument(doc);
+    this.semanticSearchEngine.addDocuments([doc]);
     return doc;
   }
 
@@ -380,7 +387,39 @@ export class KnowledgeBase {
   }
 
   // ============================================
-  // SEMANTIC SEARCH (placeholder for embeddings)
+  // SEMANTIC & KEYWORD SEARCH (via SemanticSearchEngine)
+  // ============================================
+
+  /**
+   * Perform keyword-based semantic search
+   */
+  searchKeywords(query: string, topK: number = 5): SearchResult[] {
+    return this.semanticSearchEngine.search(query, topK);
+  }
+
+  /**
+   * Find documents similar to a specific document
+   */
+  findSimilarDocuments(documentId: string, topK: number = 5): SearchResult[] {
+    return this.semanticSearchEngine.findSimilar(documentId, topK);
+  }
+
+  /**
+   * Perform batch keyword search
+   */
+  searchKeywordsBatch(queries: string[], topK: number = 5): Map<string, SearchResult[]> {
+    return this.semanticSearchEngine.searchBatch(queries, topK);
+  }
+
+  /**
+   * Get search engine statistics
+   */
+  getSearchStats(): { corpusSize: number; totalTokens: number; uniqueTokens: number } {
+    return this.semanticSearchEngine.getStats();
+  }
+
+  // ============================================
+  // SEMANTIC EMBEDDING SEARCH
   // ============================================
 
   async setEmbedding(documentId: string, embedding: number[]): Promise<void> {
