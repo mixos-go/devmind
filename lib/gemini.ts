@@ -10,7 +10,12 @@ import { createRouterTools } from "./router_tools";
 const AI_MODEL = 'gemini-3-pro-preview';
 const THINKING_BUDGET = 16000;
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY;
+if (!GEMINI_KEY) {
+  // eslint-disable-next-line no-console
+  console.warn('[DevMind] No GEMINI_API_KEY found in environment; Gemini client may fail to authenticate.');
+}
+const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
 
 // ============================================
 // UTILITY FUNCTIONS

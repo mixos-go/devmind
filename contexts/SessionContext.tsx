@@ -107,6 +107,42 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setMessages(prev => [...prev, msg]);
   }, []);
 
+  // Initialize AgentService automatically if API key is available
+  useEffect(() => {
+    try {
+      // Prefer process.env (injected by Vite), then window globals (LLMConfigPanel), then localStorage
+      const fromEnv = (process as any)?.env?.GEMINI_API_KEY;
+      const fromWindow = (window as any)?.GEMINI_API_KEY;
+      let fromStorage: string | undefined;
+      try {
+        const raw = localStorage.getItem('project.llm.config');
+        const parsed = raw ? JSON.parse(raw) : null;
+        fromStorage = parsed?.gemini;
+      } catch {}
+
+      const key = fromEnv || fromWindow || fromStorage;
+      if (key) {
+        // Lazy import to avoid bundling server-only code in places where not needed
+        import('../agents/AgentService').then(mod => {
+          try {
+            mod.initAgentService({ apiKey: key });
+            // eslint-disable-next-line no-console
+            console.log('[DevMind] AgentService initialized with Gemini key', { keyPreview: `${String(key).slice(0, 8)}...` });
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error('[DevMind] Failed to initialize AgentService', e);
+          }
+        });
+      } else {
+        // eslint-disable-next-line no-console
+        console.info('[DevMind] No Gemini API key found for AgentService initialization');
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[DevMind] Error during AgentService auto-init check', e);
+    }
+  }, []);
+
   const value: SessionContextType = {
     sessionId,
     refreshSession,
