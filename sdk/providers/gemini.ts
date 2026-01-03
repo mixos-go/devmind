@@ -69,6 +69,17 @@ export class GeminiProvider extends BaseProvider {
     
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
+
+    // In dev, if VITE_GEMINI_DEV_PROXY is enabled, route requests through the dev server
+    const useDevProxy = (typeof process !== 'undefined' && process.env && process.env.VITE_GEMINI_DEV_PROXY === 'true') ||
+      (typeof window !== 'undefined' && (window as any).VITE_GEMINI_DEV_PROXY === 'true');
+
+    if (useDevProxy) {
+      // Use a relative proxy path on the dev server; middleware will append the API key
+      this.baseUrl = '/.devmind/gemini/v1';
+      // Do not include apiKey in client URL when proxying
+      this.apiKey = '';
+    }
   }
 
   // ============================================
@@ -79,7 +90,8 @@ export class GeminiProvider extends BaseProvider {
     await this.checkRateLimit(this.estimateRequestTokens(request));
 
     const model = this.getModel(request);
-    const url = `${this.baseUrl}/models/${model}:generateContent?key=${this.apiKey}`;
+    const isProxy = this.baseUrl.startsWith('/.devmind');
+    const url = `${this.baseUrl}/models/${model}:generateContent${isProxy ? '' : `?key=${this.apiKey}`}`;
 
     const body = this.buildRequestBody(request);
     this.log('Request:', JSON.stringify(body, null, 2));
@@ -113,7 +125,8 @@ export class GeminiProvider extends BaseProvider {
     await this.checkRateLimit(this.estimateRequestTokens(request));
 
     const model = this.getModel(request);
-    const url = `${this.baseUrl}/models/${model}:streamGenerateContent?key=${this.apiKey}&alt=sse`;
+    const isProxy = this.baseUrl.startsWith('/.devmind');
+    const url = `${this.baseUrl}/models/${model}:streamGenerateContent${isProxy ? '?alt=sse' : `?key=${this.apiKey}&alt=sse`}`;
 
     const body = this.buildRequestBody(request);
 

@@ -8,8 +8,24 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
+
+// Global error handlers to capture runtime errors causing blank/black screen
+window.addEventListener('error', (ev) => {
+  // eslint-disable-next-line no-console
+  console.error('[DevMind][window.error] ', ev.error || ev.message, ev.error?.stack);
+});
+
+window.addEventListener('unhandledrejection', (ev) => {
+  // eslint-disable-next-line no-console
+  console.error('[DevMind][unhandledrejection] ', ev.reason);
+});
+
+import ErrorBoundary from './components/ErrorBoundary';
+
 root.render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );

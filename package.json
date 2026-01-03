@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "test:watch": "vitest --watch"
+    "test:watch": "vitest --watch",
+    "gemini": "npx @google/gemini-cli",
+    "setup:gemini-global": "npm install -g @google/gemini-cli"
   },
   "dependencies": {
     "@google/genai": "^1.34.0",
